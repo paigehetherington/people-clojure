@@ -2,7 +2,9 @@
   (:require [clojure.string :as str] ;creating a new namespace
             [clojure.walk :as walk] ;converts keys to keywords
             [compojure.core :as c]
-            [ring.adapter.jetty :as j])
+            [ring.adapter.jetty :as j]
+            [ring.middleware.params :as p]
+            [hiccup.core :as h])
   
   (:gen-class))
 
@@ -17,19 +19,44 @@
         people (map (fn [line]
                       (apply hash-map (interleave header line))) ; join 2 vectors, parse into HM
                     people) ; second argument
-        people (walk/keywordize-keys people) ; keys to keywords
-        people (filter (fn [line]
-                        (= (:country line) "Brazil"))
-                       people)]
+        people (walk/keywordize-keys people)] ; keys to keywords
+       
     ;(spit "filtered_people.edn" (pr-str people)) ; to write file                     
     people))
 
+(defn countries-html [people]
+  (let [all-countries (map :country people)
+        unique-countries (set all-countries)
+        sorted-countries (sort unique-countries)]
+    [:div
+     (map (fn [country]
+            [:span
+             [:a {:href (str "/?country=" country)} country]
+             " "])
+       sorted-countries)]))
+
+(defn people-html [people]
+  [:ol
+   (map (fn [person]
+          [:li (str (:first_name person) " " (:last_name person))])
+      people)])
+
 (c/defroutes app
   (c/GET "/" request
-    "Hello, world!"))
+    (let [params (:params request)
+          country (get params "country")
+          country (or country "United States")
+          people (read-people)
+          filtered-people (filter (fn [person]
+                                    (= (:country person) country))
+                            people)]
+      (h/html [:html 
+               [:body 
+                (countries-html people)
+                (people-html filtered-people)]])))) ; hiccup for html
 
 (defn -main []
-  (j/run-jetty app {:port 3000})) ; ring for web
+  (j/run-jetty (p/wrap-params app) {:port 3000})) ; ring for web
 
 
 
